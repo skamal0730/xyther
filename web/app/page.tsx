@@ -6,16 +6,17 @@ import { ActiveIntentStream } from "@/components/ActiveIntentStream";
 import { Footer } from "@/components/Footer";
 import { Hero } from "@/components/Hero";
 import { Navbar } from "@/components/Navbar";
-import { PlaygroundPanel } from "@/components/PlaygroundPanel";
+import { PlaygroundPanel, type OrderType } from "@/components/PlaygroundPanel";
 import { TechnicalDeepDive } from "@/components/TechnicalDeepDive";
 
 const CHAIN_ID = 296;
 const WHBAR_TOKEN_ID = "0.0.15058";
 const USDC_TOKEN_ID = "0.0.429274";
-const WHBAR_EVM = process.env.NEXT_PUBLIC_WHBAR_EVM || "0x0000000000000000000000000000000000003ad1";
+const WHBAR_EVM = process.env.NEXT_PUBLIC_WHBAR_EVM || "0x0000000000000000000000000000000000003ad2";
 const USDC_EVM = process.env.NEXT_PUBLIC_USDC_EVM || "0xc3ba8c19c1253c8ad43e1d3661a07efe41431ef4";
 const VERIFYING_CONTRACT =
   process.env.NEXT_PUBLIC_SETTLEMENT_CONTRACT || "0x597d420DaB6A4f6E04b446D7ee9c6F938d6Bf4F7";
+const WALLETCONNECT_PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "";
 
 type IntentPayload = {
   requestId: string;
@@ -35,6 +36,8 @@ type IntentPayload = {
 };
 
 export default function Home() {
+  type QuoteDirection = "usdcToHbar" | "hbarToUsdc" | "limitPrice";
+  const [orderType, setOrderType] = useState<OrderType>("market");
   const [walletAddress, setWalletAddress] = useState<string>("");
   const [hederaAccountId, setHederaAccountId] = useState("");
   const [signature, setSignature] = useState("");
@@ -45,11 +48,19 @@ export default function Home() {
   const [amountIn, setAmountIn] = useState("10000000");
   /** minOutput: WHBAR smallest units (8 decimals / tinybar-style) */
   const [minOutput, setMinOutput] = useState("0");
+  const [sellUsdcInput, setSellUsdcInput] = useState("10");
+  const [buyHbarInput, setBuyHbarInput] = useState("");
+  const [quoteDirection, setQuoteDirection] = useState<QuoteDirection>("usdcToHbar");
   const [nonce, setNonce] = useState(String(Date.now()));
   const [balances, setBalances] = useState<{ hbarTinybar: string; usdcUnits: string } | null>(null);
   const [expirationMinutes, setExpirationMinutes] = useState(20);
-  const [limitPriceLabel, setLimitPriceLabel] = useState("Loading quote…");
+  const [limitPriceInput, setLimitPriceInput] = useState("");
+  const [marketPrice, setMarketPrice] = useState<number | null>(null);
+  const [marketPriceDisplay, setMarketPriceDisplay] = useState("");
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [marketQuoteOk, setMarketQuoteOk] = useState(false);
   const signedDeadlineRef = useRef(0);
+  const wcRef = useRef<{ connector: any; signer: any } | null>(null);
 
   const canSign = Boolean(walletAddress);
   const canBroadcast = Boolean(signature && walletAddress);
@@ -117,33 +128,205 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [requestId]);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!amountIn || amountIn === "0") {
-        if (!cancelled) setLimitPriceLabel("Enter an amount to load SaucerSwap spot.");
+  const parseUnitsSafe = useCallback((value: string, decimals: number): string | null => {
+    const raw = value.trim();
+    if (!raw) return "0";
+    if (!/^\d*\.?\d*$/.test(raw)) return null;
+    if (raw === ".") return "0";
+    try {
+      return ethers.parseUnits(raw, decimals).toString();
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const sanitizeDecimalInput = useCallback((value: string): string => {
+    const clean = value.replace(/[^0-9.]/g, "");
+    const firstDot = clean.indexOf(".");
+    if (firstDot === -1) return clean;
+    return `${clean.slice(0, firstDot + 1)}${clean.slice(firstDot + 1).replace(/\./g, "")}`;
+  }, []);
+
+  const formatHuman = useCallback((units: string, decimals: number, precision = 6): string => {
+    const human = Number(ethers.formatUnits(BigInt(units || "0"), decimals));
+    if (!Number.isFinite(human)) return "";
+    return human.toFixed(precision).replace(/\.?0+$/, "");
+  }, []);
+
+  const applyLimitFromSellAndPrice = useCallback(
+    (sellRaw: string, priceRaw: string) => {
+      const usdcUnits = parseUnitsSafe(sellRaw, 6);
+      const price = Number(priceRaw);
+      if (usdcUnits === null || !priceRaw.trim() || !Number.isFinite(price) || price <= 0) return;
+      if (usdcUnits === "0") {
+        setAmountInSafe("0");
+        setMinOutputSafe("0");
+        setBuyHbarInput("");
         return;
       }
-      const res = await fetch(
-        `/api/spot-quote?amountIn=${encodeURIComponent(amountIn)}&sellToken=usdc`,
-        { cache: "no-store" },
-      );
+      const usdcHuman = Number(ethers.formatUnits(BigInt(usdcUnits), 6));
+      const hbarHuman = usdcHuman * price;
+      const hbarUnits = parseUnitsSafe(hbarHuman.toFixed(8), 8);
+      if (!hbarUnits) return;
+      setAmountInSafe(usdcUnits);
+      setMinOutputSafe(hbarUnits);
+      setBuyHbarInput(formatHuman(hbarUnits, 8, 8));
+    },
+    [formatHuman, parseUnitsSafe, setAmountInSafe, setMinOutputSafe],
+  );
+
+  const setLimitToMarket = useCallback(() => {
+    if (marketPrice !== null && marketPrice > 0) {
+      setLimitPriceInput(marketPrice.toFixed(6));
+      setQuoteDirection("limitPrice");
+      applyLimitFromSellAndPrice(sellUsdcInput, marketPrice.toFixed(6));
+      invalidateIntent();
+    }
+  }, [applyLimitFromSellAndPrice, invalidateIntent, marketPrice, sellUsdcInput]);
+
+  const handleOrderTypeChange = useCallback(
+    (next: OrderType) => {
+      setOrderType(next);
+      invalidateIntent();
+      if (next === "market") {
+        setQuoteDirection("usdcToHbar");
+      } else if (marketPrice !== null && marketPrice > 0 && !limitPriceInput.trim()) {
+        setLimitPriceInput(marketPrice.toFixed(6));
+        applyLimitFromSellAndPrice(sellUsdcInput, marketPrice.toFixed(6));
+      } else if (limitPriceInput.trim()) {
+        applyLimitFromSellAndPrice(sellUsdcInput, limitPriceInput);
+      }
+    },
+    [applyLimitFromSellAndPrice, invalidateIntent, limitPriceInput, marketPrice, sellUsdcInput],
+  );
+
+  // Fetch market spot quote when selling USDC (market tab or for "Set to market").
+  useEffect(() => {
+    let cancelled = false;
+    const timeout = setTimeout(async () => {
+      const inUnits = parseUnitsSafe(sellUsdcInput, 6);
+      if (inUnits === null) return;
+      if (inUnits === "0") {
+        setMarketPrice(null);
+        setMarketPriceDisplay("");
+        if (orderType === "market") {
+          setAmountInSafe("0");
+          setMinOutputSafe("0");
+          setBuyHbarInput("");
+        }
+        return;
+      }
+
+      setQuoteLoading(true);
+      const res = await fetch(`/api/spot-quote?amountIn=${encodeURIComponent(inUnits)}&sellToken=usdc`, {
+        cache: "no-store",
+      });
       const data = await res.json();
       if (cancelled) return;
-      setLimitPriceLabel(data.priceLabel || "Market");
-      if (data.ok && data.amountOut) {
-        const withSlippage = (BigInt(data.amountOut) * BigInt(99)) / BigInt(100);
-        setMinOutput(withSlippage.toString());
-        setSignature("");
-        setRequestId("");
-        setHashscanUrl("");
-        signedDeadlineRef.current = 0;
+      setQuoteLoading(false);
+
+      const quoteOk = Boolean(data.ok && data.amountOut);
+      setMarketQuoteOk(quoteOk);
+
+      if (typeof data.price === "number" && Number.isFinite(data.price) && data.price > 0) {
+        setMarketPrice(data.price);
+        const unit = data.quote && data.base ? `${data.quote}/${data.base}` : "HBAR/USDC";
+        setMarketPriceDisplay(`${data.price.toFixed(6)} ${unit}`);
+      } else {
+        setMarketPrice(null);
+        setMarketPriceDisplay(data.priceLabel || "Market quote unavailable — use Limit or enter HBAR below");
       }
-    })();
+
+      if (orderType !== "market") return;
+
+      if (quoteDirection === "hbarToUsdc" && !quoteOk) {
+        const hbarUnits = parseUnitsSafe(buyHbarInput, 8);
+        const usdcUnits = parseUnitsSafe(sellUsdcInput, 6);
+        if (hbarUnits === null || usdcUnits === null || usdcUnits === "0" || hbarUnits === "0") return;
+        const withSlippage = (BigInt(hbarUnits) * BigInt(99)) / BigInt(100);
+        setAmountInSafe(usdcUnits);
+        setMinOutputSafe(withSlippage.toString());
+        return;
+      }
+
+      if (quoteDirection !== "usdcToHbar") return;
+
+      if (!quoteOk) {
+        const usdcHuman = Number(sellUsdcInput || "0");
+        const hbarHuman = Number(buyHbarInput || "0");
+        if (usdcHuman > 0 && hbarHuman > 0) {
+          const withSlippage = hbarHuman * 0.99;
+          const hbarUnits = parseUnitsSafe(withSlippage.toFixed(8), 8);
+          if (hbarUnits) {
+            setAmountInSafe(inUnits);
+            setMinOutputSafe(hbarUnits);
+          }
+        }
+        return;
+      }
+
+      const withSlippage = (BigInt(data.amountOut) * BigInt(99)) / BigInt(100);
+      setAmountInSafe(inUnits);
+      setMinOutputSafe(withSlippage.toString());
+      setBuyHbarInput(formatHuman(withSlippage.toString(), 8, 8));
+    }, 250);
+
     return () => {
       cancelled = true;
+      clearTimeout(timeout);
     };
-  }, [amountIn]);
+  }, [
+    buyHbarInput,
+    formatHuman,
+    orderType,
+    parseUnitsSafe,
+    quoteDirection,
+    sellUsdcInput,
+    setAmountInSafe,
+    setMinOutputSafe,
+  ]);
+
+  // Limit order: derive amounts from sell + limit price, or back-solve price from min receive.
+  useEffect(() => {
+    if (orderType !== "limit") return;
+    let cancelled = false;
+    const timeout = setTimeout(async () => {
+      if (cancelled) return;
+
+      if (quoteDirection === "hbarToUsdc") {
+        const hbarUnits = parseUnitsSafe(buyHbarInput, 8);
+        const usdcUnits = parseUnitsSafe(sellUsdcInput, 6);
+        if (hbarUnits === null || usdcUnits === null || usdcUnits === "0" || hbarUnits === "0") return;
+        const usdcHuman = Number(ethers.formatUnits(BigInt(usdcUnits), 6));
+        const hbarHuman = Number(ethers.formatUnits(BigInt(hbarUnits), 8));
+        if (usdcHuman > 0 && hbarHuman > 0) {
+          setLimitPriceInput((hbarHuman / usdcHuman).toFixed(6));
+          setAmountInSafe(usdcUnits);
+          setMinOutputSafe(hbarUnits);
+        }
+        return;
+      }
+
+      if (quoteDirection === "limitPrice" || quoteDirection === "usdcToHbar") {
+        applyLimitFromSellAndPrice(sellUsdcInput, limitPriceInput);
+      }
+    }, 200);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [
+    applyLimitFromSellAndPrice,
+    buyHbarInput,
+    limitPriceInput,
+    orderType,
+    parseUnitsSafe,
+    quoteDirection,
+    sellUsdcInput,
+    setAmountInSafe,
+    setMinOutputSafe,
+  ]);
 
   useEffect(() => {
     if (!/^\d+\.\d+\.\d+$/.test(hederaAccountId.trim())) {
@@ -163,39 +346,87 @@ export default function Home() {
   const usdcBalanceDisplay = balances ? (Number(balances.usdcUnits) / 1e6).toFixed(2) : "0.00";
 
   async function connectWallet() {
-    const ethereumProvider = (window as { ethereum?: ethers.Eip1193Provider }).ethereum;
-    if (!ethereumProvider) {
-      setStatusMessage("Install MetaMask to connect.");
-      return;
+    try {
+      if (!WALLETCONNECT_PROJECT_ID) {
+        setStatusMessage("Missing WalletConnect project id.");
+        return;
+      }
+
+      // Lazy-load to avoid SSR touching localStorage (WalletConnect libs are browser-only).
+      const [{ LedgerId }, hederaWc] = await Promise.all([
+        import("@hiero-ledger/sdk"),
+        import("@hashgraph/hedera-wallet-connect"),
+      ]);
+      const { DAppConnector, HederaChainId, HederaJsonRpcMethod, HederaSessionEvent } = hederaWc as any;
+
+      const metadata = {
+        name: "Astrix",
+        description: "Astrix on Hedera",
+        url: typeof window !== "undefined" ? window.location.origin : "https://astrix.app",
+        icons: [`${typeof window !== "undefined" ? window.location.origin : ""}/logo-astrix.png`],
+      };
+
+      const connector = new DAppConnector(
+        metadata,
+        LedgerId.TESTNET,
+        WALLETCONNECT_PROJECT_ID,
+        Object.values(HederaJsonRpcMethod),
+        [HederaSessionEvent.ChainChanged, HederaSessionEvent.AccountsChanged],
+        [HederaChainId.Testnet],
+      );
+
+      setStatusMessage("Opening HashPack / Hedera WalletConnect…");
+      await connector.init({ logger: "error" });
+      await connector.openModal();
+
+      const signer = connector.signers?.[0];
+      if (!signer) {
+        setStatusMessage("No Hedera wallet account selected.");
+        return;
+      }
+
+      // Ensure EVM chain is Hedera Testnet (296 / 0x128).
+      const chainHex = (await signer.request({ method: "eth_chainId", params: [] })) as string;
+      const chainId = Number.parseInt(chainHex, 16);
+      if (chainId !== CHAIN_ID) {
+        setStatusMessage("Switch wallet to Hedera Testnet (chain 296).");
+        return;
+      }
+
+      const accounts = (await signer.request({ method: "eth_accounts", params: [] })) as string[];
+      const evmAddress = accounts?.[0] || "";
+      if (!evmAddress) {
+        setStatusMessage("Wallet did not return an EVM address.");
+        return;
+      }
+
+      wcRef.current = { connector, signer };
+      setWalletAddress(evmAddress);
+      try {
+        setHederaAccountId(signer.getAccountId().toString());
+      } catch {
+        // optional
+      }
+      setStatusMessage("Wallet connected (Hedera Testnet).");
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : "Wallet connect failed.");
     }
-    const provider = new ethers.BrowserProvider(ethereumProvider);
-    await provider.send("eth_requestAccounts", []);
-    const network = await provider.getNetwork();
-    const signer = await provider.getSigner();
-    setWalletAddress(await signer.getAddress());
-    if (Number(network.chainId) !== CHAIN_ID) {
-      setStatusMessage("Switch wallet to Hedera Testnet (chain 296).");
-      return;
-    }
-    setStatusMessage("Wallet connected on Hedera Testnet.");
   }
 
   function disconnectWallet() {
     setWalletAddress("");
+    wcRef.current?.connector.disconnectAll().catch(() => {});
+    wcRef.current = null;
     invalidateIntent();
     setStatusMessage("Disconnected.");
   }
 
   async function signIntent() {
-    const ethereumProvider = (window as { ethereum?: ethers.Eip1193Provider }).ethereum;
-    if (!ethereumProvider || !walletAddress) {
-      setStatusMessage("Connect wallet to sign EIP-712.");
+    const wc = wcRef.current;
+    if (!wc?.signer || !walletAddress) {
+      setStatusMessage("Connect HashPack to sign.");
       return;
     }
-
-    const provider = new ethers.BrowserProvider(ethereumProvider);
-    const signer = await provider.getSigner();
-
     const domain = {
       name: "AstrixIntentSettlement",
       version: "1",
@@ -230,8 +461,27 @@ export default function Home() {
       chainId: CHAIN_ID,
     };
 
-    const signed = await signer.signTypedData(domain, types, value);
-    setSignature(signed);
+    const typedData = {
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        SwapIntent: types.SwapIntent,
+      },
+      primaryType: "SwapIntent",
+      domain,
+      message: value,
+    };
+
+    const signed = (await wc.signer.request({
+      method: "eth_signTypedData_v4",
+      params: [walletAddress, JSON.stringify(typedData)],
+    })) as string;
+
+    setSignature(signed || "");
     setStatusMessage("Intent signed. Ready to broadcast.");
   }
 
@@ -279,18 +529,41 @@ export default function Home() {
       <main className="xy-main">
         <Hero />
         <PlaygroundPanel
+          orderType={orderType}
+          onOrderTypeChange={handleOrderTypeChange}
           walletAddress={walletAddress}
           hederaAccountId={hederaAccountId}
           setHederaAccountId={setHederaAccountId}
           nonce={nonce}
           setNonce={setNonceSafe}
+          sellUsdcInput={sellUsdcInput}
+          buyHbarInput={buyHbarInput}
+          onSellUsdcInput={(v) => {
+            setQuoteDirection("usdcToHbar");
+            setSellUsdcInput(sanitizeDecimalInput(v));
+            invalidateIntent();
+          }}
+          onBuyHbarInput={(v) => {
+            if (orderType === "limit" || !marketQuoteOk) {
+              setQuoteDirection("hbarToUsdc");
+              setBuyHbarInput(sanitizeDecimalInput(v));
+              invalidateIntent();
+            }
+          }}
+          limitPriceInput={limitPriceInput}
+          onLimitPriceInput={(v) => {
+            setQuoteDirection("limitPrice");
+            setLimitPriceInput(sanitizeDecimalInput(v));
+            invalidateIntent();
+          }}
+          onSetLimitToMarket={setLimitToMarket}
+          marketPriceDisplay={marketPriceDisplay}
+          marketQuoteOk={marketQuoteOk}
+          quoteLoading={quoteLoading}
           amountIn={amountIn}
-          setAmountIn={setAmountInSafe}
           minOutput={minOutput}
-          setMinOutput={setMinOutputSafe}
           expirationMinutes={expirationMinutes}
           setExpirationMinutes={setExpirationSafe}
-          limitPriceLabel={limitPriceLabel}
           usdcBalanceDisplay={usdcBalanceDisplay}
           hbarBalanceDisplay={hbarBalanceDisplay}
           canSign={canSign}

@@ -15,10 +15,8 @@ export function Hero() {
       <p className="xy-hero__title">Swap with Intent</p>
       <p className="xy-hero__lead">The first intent-centric liquidity layer on Hedera.</p>
       <p className="xy-hero__body">
-        Sign off-chain, settle on-chain. <span className="xy-accent-cyan">Zero slippage</span> at your signed limit.{" "}
-        <span className="xy-accent-gold">Zero gas on failed trades.</span> Powered by{" "}
-        <span className="xy-accent-cyan">HCS</span>—fair-ordered intent broadcast with{" "}
-        <span className="xy-accent-gold">MEV resistance</span> before atomic HTS settlement.
+        Sign off-chain, settle on-chain. <span className="xy-accent-cyan">Transparent ordering</span> via{" "}
+        <span className="xy-accent-cyan">HCS</span> and <span className="xy-accent-gold">atomic settlement</span> via HTS.
       </p>
     </motion.header>
   );

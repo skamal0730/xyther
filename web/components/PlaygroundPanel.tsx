@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 const EXPIRATION_OPTIONS = [
   { label: "5 Minutes", value: 5 },
   { label: "10 Minutes", value: 10 },
@@ -8,19 +10,30 @@ const EXPIRATION_OPTIONS = [
   { label: "60 Minutes", value: 60 },
 ];
 
+export type OrderType = "market" | "limit";
+
 type Props = {
+  orderType: OrderType;
+  onOrderTypeChange: (t: OrderType) => void;
   walletAddress: string;
   hederaAccountId: string;
   setHederaAccountId: (v: string) => void;
   nonce: string;
   setNonce: (v: string) => void;
+  sellUsdcInput: string;
+  buyHbarInput: string;
+  onSellUsdcInput: (v: string) => void;
+  onBuyHbarInput: (v: string) => void;
+  limitPriceInput: string;
+  onLimitPriceInput: (v: string) => void;
+  onSetLimitToMarket: () => void;
+  marketPriceDisplay: string;
+  marketQuoteOk: boolean;
+  quoteLoading: boolean;
   amountIn: string;
-  setAmountIn: (v: string) => void;
   minOutput: string;
-  setMinOutput: (v: string) => void;
   expirationMinutes: number;
   setExpirationMinutes: (v: number) => void;
-  limitPriceLabel: string;
   usdcBalanceDisplay: string;
   hbarBalanceDisplay: string;
   canSign: boolean;
@@ -34,18 +47,27 @@ type Props = {
 };
 
 export function PlaygroundPanel({
+  orderType,
+  onOrderTypeChange,
   walletAddress,
   hederaAccountId,
   setHederaAccountId,
   nonce,
   setNonce,
+  sellUsdcInput,
+  buyHbarInput,
+  onSellUsdcInput,
+  onBuyHbarInput,
+  limitPriceInput,
+  onLimitPriceInput,
+  onSetLimitToMarket,
+  marketPriceDisplay,
+  marketQuoteOk,
+  quoteLoading,
   amountIn,
-  setAmountIn,
   minOutput,
-  setMinOutput,
   expirationMinutes,
   setExpirationMinutes,
-  limitPriceLabel,
   usdcBalanceDisplay,
   hbarBalanceDisplay,
   canSign,
@@ -57,16 +79,38 @@ export function PlaygroundPanel({
   whbarTokenId,
   usdcTokenId,
 }: Props) {
-  const sellUsdcHuman = amountIn ? (Number(amountIn) / 1e6).toFixed(6) : "0";
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const receiveReadOnly = orderType === "market" && marketQuoteOk;
 
   return (
     <article id="swap" className="glass-strong xy-play xy-scroll-target">
-      <h2 className="xy-play__h2">Astrix Playground</h2>
-      <p className="xy-play__sub">Sign an intent, broadcast to HCS, let solvers compete to fill.</p>
+      <h2 className="xy-play__h2">Astrix Swap</h2>
+      <p className="xy-play__sub">Sign an intent, broadcast to HCS, solvers compete to fill.</p>
+
+      <div className="xy-play__tabs" role="tablist" aria-label="Order type">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={orderType === "market"}
+          className={orderType === "market" ? "xy-play__tab xy-play__tab--active" : "xy-play__tab"}
+          onClick={() => onOrderTypeChange("market")}
+        >
+          Market Order
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={orderType === "limit"}
+          className={orderType === "limit" ? "xy-play__tab xy-play__tab--active" : "xy-play__tab"}
+          onClick={() => onOrderTypeChange("limit")}
+        >
+          Limit Order
+        </button>
+      </div>
 
       <div className="xy-play__box">
         <div className="xy-play__row">
-          <span className="xy-play__label">You Sell</span>
+          <span className="xy-play__label">Sell amount</span>
           <span className="xy-play__balance">
             Balance: <span className="u-fg-soft">{usdcBalanceDisplay}</span> USDC
           </span>
@@ -74,67 +118,77 @@ export function PlaygroundPanel({
         <div className="xy-play__input-row">
           <input
             className="xy-play__input"
-            value={sellUsdcHuman}
+            value={sellUsdcInput}
             inputMode="decimal"
-            onChange={(e) => {
-              const raw = e.target.value.replace(/[^0-9.]/g, "");
-              if (raw === "" || raw === ".") {
-                setAmountIn("0");
-                return;
-              }
-              const n = Number(raw);
-              if (Number.isNaN(n)) return;
-              setAmountIn(String(Math.round(n * 1e6)));
-            }}
+            placeholder="0"
+            onChange={(e) => onSellUsdcInput(e.target.value)}
           />
-          <button type="button" className="button button-ghost button-slim shrink-0">
-            USDC
-          </button>
+          <span className="xy-play__token-pill">USDC</span>
         </div>
-        <p className="xy-play__hint">
-          On-chain: {amountIn} USDC units (6 decimals) · {usdcTokenId}
-        </p>
       </div>
+
+      {orderType === "limit" ? (
+        <div className="xy-play__box xy-play__box--compact">
+          <div className="xy-play__row">
+            <span className="xy-play__label">Limit price</span>
+            <button type="button" className="xy-play__market-link" onClick={onSetLimitToMarket}>
+              Set to market
+            </button>
+          </div>
+          <div className="xy-play__input-row xy-play__input-row--sm">
+            <input
+              className="xy-play__input xy-play__input--sm"
+              value={limitPriceInput}
+              inputMode="decimal"
+              placeholder="HBAR per USDC"
+              onChange={(e) => onLimitPriceInput(e.target.value)}
+            />
+            <span className="xy-play__token-pill xy-play__token-pill--muted">HBAR / USDC</span>
+          </div>
+          {marketPriceDisplay ? (
+            <p className="xy-play__hint">Market: {marketPriceDisplay}</p>
+          ) : null}
+        </div>
+      ) : (
+        <p className="xy-play__market-banner">
+          {quoteLoading ? "Fetching market price…" : marketPriceDisplay || "Enter sell amount for market quote"}
+        </p>
+      )}
 
       <div className="xy-play__arrow">↓</div>
 
       <div className="xy-play__box">
         <div className="xy-play__row">
-          <span className="xy-play__label">You Buy</span>
+          <span className="xy-play__label">{orderType === "market" ? "Receive at least" : "Min receive"}</span>
           <span className="xy-play__balance">
-            Wallet HBAR: <span className="u-fg-soft">{hbarBalanceDisplay}</span>
+            HBAR: <span className="u-fg-soft">{hbarBalanceDisplay}</span>
           </span>
         </div>
         <div className="xy-play__input-row">
           <input
             className="xy-play__input"
-            value={minOutput ? (Number(minOutput) / 1e8).toFixed(6) : ""}
+            value={buyHbarInput}
             inputMode="decimal"
-            onChange={(e) => {
-              const raw = e.target.value.replace(/[^0-9.]/g, "");
-              if (raw === "" || raw === ".") {
-                setMinOutput("0");
-                return;
-              }
-              const n = Number(raw);
-              if (Number.isNaN(n)) return;
-              setMinOutput(String(Math.round(n * 1e8)));
-            }}
+            placeholder="0"
+            readOnly={receiveReadOnly}
+            onChange={(e) => onBuyHbarInput(e.target.value)}
           />
-          <button type="button" className="button button-ghost button-slim shrink-0">
-            HBAR
-          </button>
+          <span className="xy-play__token-pill">HBAR</span>
         </div>
-        <p className="xy-play__hint">Min receive: WHBAR tinybars (8 decimals) · {whbarTokenId}</p>
+        {orderType === "market" ? (
+          <p className="xy-play__hint">
+            {marketQuoteOk
+              ? "Auto-filled from SaucerSwap quote (1% slippage buffer)"
+              : "Quoter offline — enter expected HBAR or switch to Limit order"}
+          </p>
+        ) : (
+          <p className="xy-play__hint">Edit to adjust limit, or change limit price above</p>
+        )}
       </div>
 
       <div className="xy-play__settings">
         <label className="xy-play__field-label">
-          <span>Limit price</span>
-          <input readOnly className="xy-play__readonly" value={limitPriceLabel} />
-        </label>
-        <label className="xy-play__field-label">
-          <span>Expiration</span>
+          <span>Expiry</span>
           <select
             className="xy-play__select"
             value={expirationMinutes}
@@ -149,17 +203,30 @@ export function PlaygroundPanel({
         </label>
       </div>
 
-      <div className="xy-play__advanced">
-        <Field label="Hedera account ID (balances)" value={hederaAccountId} onChange={setHederaAccountId} placeholder="0.0.xxxxx" />
-        <div className="xy-play__grid2">
-          <Field
-            label="Wallet"
-            value={walletAddress ? `${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}` : "—"}
-            readOnly
-          />
-          <Field label="Nonce" value={nonce} onChange={setNonce} />
+      <button
+        type="button"
+        className="xy-play__advanced-toggle"
+        onClick={() => setShowAdvanced((v) => !v)}
+      >
+        {showAdvanced ? "Hide" : "Show"} advanced
+      </button>
+
+      {showAdvanced ? (
+        <div className="xy-play__advanced">
+          <Field label="Hedera account ID (balances)" value={hederaAccountId} onChange={setHederaAccountId} placeholder="0.0.xxxxx" />
+          <div className="xy-play__grid2">
+            <Field
+              label="Wallet"
+              value={walletAddress ? `${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}` : "—"}
+              readOnly
+            />
+            <Field label="Nonce" value={nonce} onChange={setNonce} />
+          </div>
+          <p className="xy-play__hint">
+            On-chain: {amountIn} USDC units · min {minOutput} WHBAR units · {usdcTokenId} → {whbarTokenId}
+          </p>
         </div>
-      </div>
+      ) : null}
 
       <button
         type="button"

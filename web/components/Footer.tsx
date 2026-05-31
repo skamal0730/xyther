@@ -36,7 +36,7 @@ export function Footer() {
         </div>
       </div>
       <p className="xy-footer__tagline">
-        Astrix — intent-centric execution on Hedera. MEV-resistant ordering via HCS; atomic settlement via HTS.
+        Astrix — intent-centric execution on Hedera. HCS broadcast + atomic settlement via HTS.
       </p>
     </footer>
   );

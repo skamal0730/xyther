@@ -5,8 +5,8 @@ import { motion } from "framer-motion";
 const columns = [
   {
     id: "hcs",
-    headline: "Fair-Ordered Mempool (HCS)",
-    body: "Astrix utilizes the Hedera Consensus Service to broadcast intents. Every trade request receives a verifiable, tamper-proof timestamp—reducing classic mempool leakage and strengthening MEV resistance before execution.",
+    headline: "HCS Broadcast & Audit Trail",
+    body: "Astrix uses the Hedera Consensus Service to broadcast intents. Each request gets an immutable consensus timestamp, making intent flow easy to observe and audit.",
   },
   {
     id: "solvers",
@@ -26,8 +26,7 @@ export function TechnicalDeepDive() {
       <div className="xy-dive__intro">
         <h2 className="xy-dive__h2">Technical Deep Dive</h2>
         <p className="xy-dive__sub">
-          Zero slippage at your limit, MEV-resistant ordering, and atomic HTS settlement—designed for credible,
-          audit-ready execution on Hedera.
+          Intent broadcast via HCS and atomic HTS settlement—designed for transparent, audit-ready execution on Hedera.
         </p>
       </div>
       <div id="solvers" className="xy-dive__grid xy-scroll-target">

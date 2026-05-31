@@ -40,10 +40,12 @@ export async function GET(request: Request) {
     const inNum = Number(amountIn);
 
     let priceLabel: string;
+    let price: number | null = null;
     if (usdcToWhbar) {
       const usdcHuman = inNum / 1e6;
       const hbarHuman = outNum / 1e8;
       const perUsdc = usdcHuman > 0 ? hbarHuman / usdcHuman : 0;
+      price = perUsdc > 0 ? perUsdc : null;
       priceLabel =
         perUsdc > 0
           ? `1 USDC ≈ ${perUsdc.toFixed(6)} HBAR (SaucerSwap quote)`
@@ -52,6 +54,7 @@ export async function GET(request: Request) {
       const hbarHuman = inNum / 1e8;
       const usdcHuman = outNum / 1e6;
       const perHbar = hbarHuman > 0 ? usdcHuman / hbarHuman : 0;
+      price = perHbar > 0 ? perHbar : null;
       priceLabel =
         perHbar > 0
           ? `1 HBAR ≈ ${perHbar.toFixed(6)} USDC (SaucerSwap quote)`
@@ -62,11 +65,17 @@ export async function GET(request: Request) {
       ok: true,
       amountOut: amountOut.toString(),
       priceLabel,
+      price,
+      base: usdcToWhbar ? "USDC" : "HBAR",
+      quote: usdcToWhbar ? "HBAR" : "USDC",
     });
   } catch {
     return NextResponse.json({
       ok: false,
       amountOut: null,
+      price: null,
+      base: usdcToWhbar ? "USDC" : "HBAR",
+      quote: usdcToWhbar ? "HBAR" : "USDC",
       priceLabel: "Market (quoter unavailable — set HEDERA_RPC_URL or check pool)",
     });
   }
