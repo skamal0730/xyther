@@ -9,12 +9,12 @@ type MirrorMessage = {
 };
 
 export async function GET() {
-  const topicId =
-    process.env.NEXT_PUBLIC_HCS_TOPIC_ID || process.env.HCS_TOPIC_ID || "";
+  /** Server-only — never use NEXT_PUBLIC_* (would expose topic id in the client bundle). */
+  const topicId = process.env.HCS_TOPIC_ID || "";
   const mirrorBase = (process.env.MIRROR_NODE_URL || DEFAULT_MIRROR).replace(/\/$/, "");
 
   if (!topicId) {
-    return NextResponse.json({ messages: [], warning: "HCS_TOPIC_ID not configured" });
+    return NextResponse.json({ messages: [], warning: "Intent stream not configured" });
   }
 
   try {
@@ -52,7 +52,7 @@ export async function GET() {
         preview: decoded.length > 120 ? `${decoded.slice(0, 120)}…` : decoded,
       };
     });
-    return NextResponse.json({ topicId, messages });
+    return NextResponse.json({ messages });
   } catch (error) {
     return NextResponse.json(
       { messages: [], error: error instanceof Error ? error.message : "Mirror fetch failed" },

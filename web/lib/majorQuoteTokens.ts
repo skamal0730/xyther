@@ -1,0 +1,112 @@
+import type { SwapToken } from "@/lib/tokenTypes";
+
+const ZERO = "0x0000000000000000000000000000000000000000";
+
+/** Major assets — live reference rates via CoinGecko; intent signing needs Hedera HTS id (see native list). */
+function q(
+  symbol: string,
+  name: string,
+  coingeckoId: string,
+  decimals = 8,
+): SwapToken {
+  return {
+    symbol,
+    name,
+    hederaId: "",
+    evmAddress: ZERO,
+    decimals,
+    coingeckoId,
+    quoteOnly: true,
+  };
+}
+
+export const MAJOR_QUOTE_TOKENS: SwapToken[] = [
+  // Layer-1 / majors (Urani-style breadth)
+  q("SOL", "Solana", "solana", 9),
+  q("BTC", "Bitcoin", "bitcoin", 8),
+  q("ETH", "Ethereum", "ethereum", 8),
+  q("BNB", "BNB", "binancecoin", 8),
+  q("XRP", "XRP", "ripple", 6),
+  q("ADA", "Cardano", "cardano", 6),
+  q("DOGE", "Dogecoin", "dogecoin", 8),
+  q("AVAX", "Avalanche", "avalanche-2", 8),
+  q("DOT", "Polkadot", "polkadot", 8),
+  q("POL", "Polygon", "matic-network", 8),
+  q("LINK", "Chainlink", "chainlink", 8),
+  q("LTC", "Litecoin", "litecoin", 8),
+  q("BCH", "Bitcoin Cash", "bitcoin-cash", 8),
+  q("ATOM", "Cosmos", "cosmos", 6),
+  q("XLM", "Stellar", "stellar", 7),
+  q("NEAR", "NEAR", "near", 8),
+  q("APT", "Aptos", "aptos", 8),
+  q("SUI", "Sui", "sui", 8),
+  q("TON", "Toncoin", "the-open-network", 9),
+  q("TRX", "TRON", "tron", 6),
+  q("ICP", "Internet Computer", "internet-computer", 8),
+  q("FIL", "Filecoin", "filecoin", 8),
+  q("VET", "VeChain", "vechain", 8),
+  q("ALGO", "Algorand", "algorand", 6),
+  q("FTM", "Fantom", "fantom", 8),
+  q("EGLD", "MultiversX", "elrond-erd-2", 8),
+  q("FLOW", "Flow", "flow", 8),
+  q("XTZ", "Tezos", "tezos", 6),
+  q("EOS", "EOS", "eos", 4),
+  q("XMR", "Monero", "monero", 8),
+  q("ETC", "Ethereum Classic", "ethereum-classic", 8),
+  q("INJ", "Injective", "injective-protocol", 8),
+  q("SEI", "Sei", "sei-network", 6),
+  q("TIA", "Celestia", "celestia", 6),
+  q("RUNE", "THORChain", "thorchain", 8),
+  q("QNT", "Quant", "quant-network", 8),
+  // Stables
+  q("USDT", "Tether", "tether", 6),
+  q("DAI", "DAI", "dai", 18),
+  q("EURC", "Euro Coin", "euro-coin", 6),
+  // Wrapped / BTC variants
+  q("WBTC", "Wrapped Bitcoin", "wrapped-bitcoin", 8),
+  q("WETH", "Wrapped Ether", "weth", 8),
+  q("STETH", "Lido Staked ETH", "staked-ether", 18),
+  // Solana ecosystem
+  q("JUP", "Jupiter", "jupiter-exchange-solana", 6),
+  q("RAY", "Raydium", "raydium", 6),
+  q("BONK", "Bonk", "bonk", 5),
+  q("WIF", "dogwifhat", "dogwifcoin", 6),
+  q("PYTH", "Pyth Network", "pyth-network", 6),
+  q("JTO", "Jito", "jito-governance-token", 9),
+  q("ORCA", "Orca", "orca", 6),
+  q("MSOL", "Marinade Staked SOL", "msol", 9),
+  // DeFi
+  q("UNI", "Uniswap", "uniswap", 8),
+  q("AAVE", "Aave", "aave", 8),
+  q("MKR", "Maker", "maker", 18),
+  q("CRV", "Curve", "curve-dao-token", 8),
+  q("SNX", "Synthetix", "havven", 8),
+  q("COMP", "Compound", "compound-governance-token", 8),
+  q("SUSHI", "Sushi", "sushi", 8),
+  q("YFI", "yearn.finance", "yearn-finance", 8),
+  q("1INCH", "1inch", "1inch", 8),
+  q("DYDX", "dYdX", "dydx-chain", 8),
+  q("LDO", "Lido DAO", "lido-dao", 8),
+  q("GRT", "The Graph", "the-graph", 8),
+  q("ARB", "Arbitrum", "arbitrum", 8),
+  q("OP", "Optimism", "optimism", 8),
+  q("IMX", "Immutable", "immutable-x", 8),
+  q("RNDR", "Render", "render-token", 8),
+  q("FET", "Fetch.ai", "fetch-ai", 8),
+  // Meme / retail
+  q("SHIB", "Shiba Inu", "shiba-inu", 8),
+  q("PEPE", "Pepe", "pepe", 8),
+  q("FLOKI", "FLOKI", "floki", 9),
+  // Gaming / metaverse
+  q("MANA", "Decentraland", "decentraland", 8),
+  q("SAND", "The Sandbox", "the-sandbox", 8),
+  q("AXS", "Axie Infinity", "axie-infinity", 8),
+  q("GMT", "STEPN", "stepn", 9),
+  q("CHZ", "Chiliz", "chiliz", 8),
+  q("GALA", "Gala", "gala", 8),
+  // Other Urani-list style
+  q("HNT", "Helium", "helium", 8),
+  q("SLP", "Smooth Love Potion", "smooth-love-potion", 0),
+  q("FTT", "FTX Token", "ftx-token", 6),
+  q("SPELL", "Spell", "spell-token", 8),
+];

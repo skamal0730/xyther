@@ -40,7 +40,6 @@ export function ActiveIntentStream() {
   const [rows, setRows] = useState<
     { key: string; status: string; intentId: string; pair: string; href: string }[]
   >([]);
-  const [topicId, setTopicId] = useState<string>("");
   const [error, setError] = useState<string>("");
 
   const load = useCallback(async () => {
@@ -57,8 +56,6 @@ export function ActiveIntentStream() {
         if (it?.requestId) byRequest.set(it.requestId, it);
       }
 
-      const tid = topicJson.topicId || "";
-      setTopicId(tid);
       if (topicJson.error) setError(topicJson.error);
       else setError("");
 
@@ -66,9 +63,7 @@ export function ActiveIntentStream() {
       const mapped = messages.map((m) => {
         const backend = m.requestId ? byRequest.get(m.requestId) : undefined;
         const status = displayStatus(backend);
-        const href =
-          backend?.hashscanUrl ||
-          (tid ? `https://hashscan.io/testnet/topic/${tid}` : "https://hashscan.io/testnet");
+        const href = backend?.hashscanUrl || "https://hashscan.io/testnet";
         return {
           key: `${m.sequence_number}-${m.consensus_timestamp}`,
           status,
@@ -108,15 +103,9 @@ export function ActiveIntentStream() {
         <div>
           <h2 className="xy-stream__h2">Active Intent Stream</h2>
           <p className="xy-stream__desc">
-            Recent HCS messages on your configured topic—enriched with relay status when available. Proof that intents
-            hit Hedera consensus, not just the UI.
+            Recent intent activity on Hedera consensus—enriched with relay status when available.
           </p>
         </div>
-        {topicId ? (
-          <span className="xy-stream__topic">
-            Topic <span className="font-mono u-fg-soft">{topicId}</span>
-          </span>
-        ) : null}
       </div>
 
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass-strong xy-stream__shell">

@@ -1,6 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { TokenListModal } from "@/components/TokenListModal";
+import {
+  PROTOCOL_FEE_PERCENT,
+  QUOTE_REFRESH_MS,
+  SLIPPAGE_PRESETS,
+  type SwapToken,
+} from "@/lib/tokens";
 
 const EXPIRATION_OPTIONS = [
   { label: "5 Minutes", value: 5 },
@@ -15,72 +22,89 @@ export type OrderType = "market" | "limit";
 type Props = {
   orderType: OrderType;
   onOrderTypeChange: (t: OrderType) => void;
+  sellToken: SwapToken;
+  buyToken: SwapToken;
+  onSellTokenChange: (symbol: string) => void;
+  onBuyTokenChange: (symbol: string) => void;
   walletAddress: string;
   hederaAccountId: string;
   setHederaAccountId: (v: string) => void;
   nonce: string;
   setNonce: (v: string) => void;
-  sellUsdcInput: string;
-  buyHbarInput: string;
-  onSellUsdcInput: (v: string) => void;
-  onBuyHbarInput: (v: string) => void;
+  sellAmountInput: string;
+  buyAmountInput: string;
+  onSellAmountInput: (v: string) => void;
+  onBuyAmountInput: (v: string) => void;
   limitPriceInput: string;
   onLimitPriceInput: (v: string) => void;
   onSetLimitToMarket: () => void;
   marketPriceDisplay: string;
+  canSetLimitToMarket: boolean;
   marketQuoteOk: boolean;
   quoteLoading: boolean;
+  sameTokenPair: boolean;
+  pairSignable: boolean;
+  slippagePercent: number;
+  onSlippageChange: (v: number) => void;
+  onSwapTokens: () => void;
   amountIn: string;
   minOutput: string;
   expirationMinutes: number;
   setExpirationMinutes: (v: number) => void;
-  usdcBalanceDisplay: string;
-  hbarBalanceDisplay: string;
+  sellBalanceDisplay: string;
+  buyBalanceDisplay: string;
   canSign: boolean;
   canBroadcast: boolean;
   onSign: () => void;
   onBroadcast: () => void;
-  statusMessage: string;
-  hashscanUrl: string;
-  whbarTokenId: string;
-  usdcTokenId: string;
+  quoteLiveLabel: string;
 };
 
 export function PlaygroundPanel({
   orderType,
   onOrderTypeChange,
+  sellToken,
+  buyToken,
+  onSellTokenChange,
+  onBuyTokenChange,
   walletAddress,
   hederaAccountId,
   setHederaAccountId,
   nonce,
   setNonce,
-  sellUsdcInput,
-  buyHbarInput,
-  onSellUsdcInput,
-  onBuyHbarInput,
+  sellAmountInput,
+  buyAmountInput,
+  onSellAmountInput,
+  onBuyAmountInput,
   limitPriceInput,
   onLimitPriceInput,
   onSetLimitToMarket,
   marketPriceDisplay,
+  canSetLimitToMarket,
   marketQuoteOk,
   quoteLoading,
+  sameTokenPair,
+  pairSignable,
+  slippagePercent,
+  onSlippageChange,
+  onSwapTokens,
   amountIn,
   minOutput,
   expirationMinutes,
   setExpirationMinutes,
-  usdcBalanceDisplay,
-  hbarBalanceDisplay,
+  sellBalanceDisplay,
+  buyBalanceDisplay,
   canSign,
   canBroadcast,
   onSign,
   onBroadcast,
-  statusMessage,
-  hashscanUrl,
-  whbarTokenId,
-  usdcTokenId,
+  quoteLiveLabel,
 }: Props) {
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const receiveReadOnly = orderType === "market" && marketQuoteOk;
+  const [tokenModal, setTokenModal] = useState<"sell" | "buy" | null>(null);
+  const receiveReadOnly = orderType === "market" && marketQuoteOk && !sameTokenPair;
+  const limitPriceUnit = `${buyToken.symbol} / ${sellToken.symbol}`;
+  const quoteOnlyPair = sellToken.quoteOnly || buyToken.quoteOnly;
 
   return (
     <article id="swap" className="glass-strong xy-play xy-scroll-target">
@@ -112,18 +136,18 @@ export function PlaygroundPanel({
         <div className="xy-play__row">
           <span className="xy-play__label">Sell amount</span>
           <span className="xy-play__balance">
-            Balance: <span className="u-fg-soft">{usdcBalanceDisplay}</span> USDC
+            Balance: <span className="u-fg-soft">{sellBalanceDisplay}</span>
           </span>
         </div>
         <div className="xy-play__input-row">
           <input
             className="xy-play__input"
-            value={sellUsdcInput}
+            value={sellAmountInput}
             inputMode="decimal"
             placeholder="0"
-            onChange={(e) => onSellUsdcInput(e.target.value)}
+            onChange={(e) => onSellAmountInput(e.target.value)}
           />
-          <span className="xy-play__token-pill">USDC</span>
+          <TokenPickerButton symbol={sellToken.symbol} onClick={() => setTokenModal("sell")} />
         </div>
       </div>
 
@@ -131,7 +155,12 @@ export function PlaygroundPanel({
         <div className="xy-play__box xy-play__box--compact">
           <div className="xy-play__row">
             <span className="xy-play__label">Limit price</span>
-            <button type="button" className="xy-play__market-link" onClick={onSetLimitToMarket}>
+            <button
+              type="button"
+              className="xy-play__market-link"
+              onClick={onSetLimitToMarket}
+              disabled={!canSetLimitToMarket}
+            >
               Set to market
             </button>
           </div>
@@ -140,53 +169,96 @@ export function PlaygroundPanel({
               className="xy-play__input xy-play__input--sm"
               value={limitPriceInput}
               inputMode="decimal"
-              placeholder="HBAR per USDC"
+              placeholder={`${buyToken.symbol} per ${sellToken.symbol}`}
               onChange={(e) => onLimitPriceInput(e.target.value)}
             />
-            <span className="xy-play__token-pill xy-play__token-pill--muted">HBAR / USDC</span>
+            <span className="xy-play__token-pill xy-play__token-pill--muted">{limitPriceUnit}</span>
           </div>
           {marketPriceDisplay ? (
             <p className="xy-play__hint">Market: {marketPriceDisplay}</p>
           ) : null}
         </div>
-      ) : (
+      ) : marketPriceDisplay || quoteLoading ? (
         <p className="xy-play__market-banner">
-          {quoteLoading ? "Fetching market price…" : marketPriceDisplay || "Enter sell amount for market quote"}
+          {quoteLoading ? "Fetching market rate…" : marketPriceDisplay}
         </p>
-      )}
+      ) : null}
 
-      <div className="xy-play__arrow">↓</div>
+      <div className="xy-play__swap-row">
+        <button type="button" className="xy-play__arrow" onClick={onSwapTokens} aria-label="Swap sell and buy tokens">
+          ↕
+        </button>
+      </div>
 
       <div className="xy-play__box">
         <div className="xy-play__row">
           <span className="xy-play__label">{orderType === "market" ? "Receive at least" : "Min receive"}</span>
           <span className="xy-play__balance">
-            HBAR: <span className="u-fg-soft">{hbarBalanceDisplay}</span>
+            Balance: <span className="u-fg-soft">{buyBalanceDisplay}</span>
           </span>
         </div>
         <div className="xy-play__input-row">
           <input
             className="xy-play__input"
-            value={buyHbarInput}
+            value={buyAmountInput}
             inputMode="decimal"
             placeholder="0"
             readOnly={receiveReadOnly}
-            onChange={(e) => onBuyHbarInput(e.target.value)}
+            onChange={(e) => onBuyAmountInput(e.target.value)}
           />
-          <span className="xy-play__token-pill">HBAR</span>
+          <TokenPickerButton symbol={buyToken.symbol} onClick={() => setTokenModal("buy")} />
         </div>
-        {orderType === "market" ? (
+        {sameTokenPair ? (
+          <p className="xy-play__hint xy-play__hint--warn">Choose two different tokens to swap.</p>
+        ) : quoteOnlyPair ? (
+          <p className="xy-play__hint xy-play__hint--warn">
+            Live rate shown for {sellToken.symbol}/{buyToken.symbol}. To sign &amp; broadcast on Hedera, pick USDC,
+            HBAR, SAUCE, or XSAUCE.
+          </p>
+        ) : orderType === "market" ? (
           <p className="xy-play__hint">
             {marketQuoteOk
-              ? "Auto-filled from SaucerSwap quote (1% slippage buffer)"
-              : "Quoter offline — enter expected HBAR or switch to Limit order"}
+              ? `Estimated rate with ${slippagePercent}% max slippage`
+              : "Enter expected receive amount, or switch to Limit order"}
           </p>
         ) : (
-          <p className="xy-play__hint">Edit to adjust limit, or change limit price above</p>
+          <p className="xy-play__hint">Adjust receive amount or limit price above</p>
         )}
       </div>
 
+      <div className="xy-play__trade-info">
+        {quoteLiveLabel ? (
+          <p className="xy-play__trade-info-line xy-play__trade-info-line--live">
+            <span className="xy-play__live-dot" aria-hidden />
+            {quoteLiveLabel}
+          </p>
+        ) : null}
+        <p className="xy-play__trade-info-line xy-play__trade-info-line--muted">
+          Rates refresh every {QUOTE_REFRESH_MS / 1000}s
+        </p>
+        <p className="xy-play__trade-info-line">
+          Slippage: <strong>{slippagePercent}%</strong>
+          <span className="xy-play__sep">·</span>
+          Fee: <strong>{PROTOCOL_FEE_PERCENT}%</strong> (alpha)
+        </p>
+      </div>
+
       <div className="xy-play__settings">
+        <label className="xy-play__field-label">
+          <span>Max slippage</span>
+          <div className="xy-play__slippage-row">
+            {SLIPPAGE_PRESETS.map((p) => (
+              <button
+                key={p}
+                type="button"
+                className={slippagePercent === p ? "xy-play__slip xy-play__slip--active" : "xy-play__slip"}
+                onClick={() => onSlippageChange(p)}
+              >
+                {p}%
+              </button>
+            ))}
+          </div>
+        </label>
         <label className="xy-play__field-label">
           <span>Expiry</span>
           <select
@@ -223,7 +295,7 @@ export function PlaygroundPanel({
             <Field label="Nonce" value={nonce} onChange={setNonce} />
           </div>
           <p className="xy-play__hint">
-            On-chain: {amountIn} USDC units · min {minOutput} WHBAR units · {usdcTokenId} → {whbarTokenId}
+            On-chain: {amountIn} {sellToken.symbol} units → min {minOutput} {buyToken.symbol} units
           </p>
         </div>
       ) : null}
@@ -231,25 +303,38 @@ export function PlaygroundPanel({
       <button
         type="button"
         className="button button-primary broadcast-pulse xy-play__cta"
-        disabled={!canSign || amountIn === "0" || minOutput === "0"}
+        disabled={!canSign || sameTokenPair || !pairSignable || amountIn === "0" || minOutput === "0"}
         onClick={canBroadcast ? onBroadcast : onSign}
       >
         {canBroadcast ? "Sign & Broadcast Intent" : "Sign Intent"}
       </button>
 
-      <div className="xy-play__status">
-        <p>
-          <span className="u-fg">Status:</span> {statusMessage}
-        </p>
-        {hashscanUrl ? (
-          <p>
-            <a className="link-accent" href={hashscanUrl} target="_blank" rel="noreferrer">
-              View on HashScan
-            </a>
-          </p>
-        ) : null}
-      </div>
+      <TokenListModal
+        open={tokenModal === "sell"}
+        onClose={() => setTokenModal(null)}
+        excludeSymbol={buyToken.symbol}
+        title="Select token to sell"
+        onSelect={(t) => onSellTokenChange(t.symbol)}
+      />
+      <TokenListModal
+        open={tokenModal === "buy"}
+        onClose={() => setTokenModal(null)}
+        excludeSymbol={sellToken.symbol}
+        title="Select token to buy"
+        onSelect={(t) => onBuyTokenChange(t.symbol)}
+      />
     </article>
+  );
+}
+
+function TokenPickerButton({ symbol, onClick }: { symbol: string; onClick: () => void }) {
+  return (
+    <button type="button" className="xy-play__token-pill xy-play__token-pill--btn" onClick={onClick}>
+      {symbol}
+      <span className="xy-play__chev" aria-hidden>
+        ▾
+      </span>
+    </button>
   );
 }
 
